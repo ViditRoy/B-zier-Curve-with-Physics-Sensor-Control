@@ -1,132 +1,143 @@
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
+let P0 = { x: 0, y: 0 };
+let P3 = { x: 0, y: 0 };
+let P1 = { x: 0, y: 0 };
+let P2 = { x: 0, y: 0 };
+let target1 = { x: 0, y: 0 };
+let target2 = { x: 0, y: 0 };
+let V1 = { x: 0, y: 0 };
+let V2 = { x: 0, y: 0 };
+let dragging = null;
+
 function resize() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
+
+  const offsetX = Math.min(150, canvas.width / 4);
+  const offsetY = Math.min(150, canvas.height / 4);
+
+  P0.x = offsetX;
+  P0.y = canvas.height / 2;
+  P3.x = canvas.width - offsetX;
+  P3.y = canvas.height / 2;
+
+  P1.x = P0.x + offsetX;
+  P1.y = P0.y - offsetY;
+  P2.x = P3.x - offsetX;
+  P2.y = P3.y + offsetY;
+
+  target1.x = P1.x;
+  target1.y = P1.y;
+  target2.x = P2.x;
+  target2.y = P2.y;
 }
 resize();
 window.addEventListener("resize", resize);
 
-const P0 = { x: 200, y: canvas.height / 2 };
-const P3 = { x: canvas.width - 200, y: canvas.height / 2 };
+function cubicBezier(t, P0, P1, P2, P3) {
+  const mt = 1 - t;
+  return {
+    x: mt*mt*mt*P0.x + 3*mt*mt*t*P1.x + 3*mt*t*t*P2.x + t*t*t*P3.x,
+    y: mt*mt*mt*P0.y + 3*mt*mt*t*P1.y + 3*mt*t*t*P2.y + t*t*t*P3.y
+  };
+}
 
-let P1 = { x: P0.x + 150, y: P0.y - 150 };
-let P2 = { x: P3.x - 150, y: P3.y + 150 };
+function cubicBezierDerivative(t, P0, P1, P2, P3) {
+  const mt = 1 - t;
+  return {
+    x: 3*mt*mt*(P1.x - P0.x) + 6*mt*t*(P2.x - P1.x) + 3*t*t*(P3.x - P2.x),
+    y: 3*mt*mt*(P1.y - P0.y) + 6*mt*t*(P2.y - P1.y) + 3*t*t*(P3.y - P2.y)
+  };
+}
 
-let v1 = { x: 0, y: 0 };
-let v2 = { x: 0, y: 0 };
+function distance(A, B) {
+  return Math.hypot(A.x - B.x, A.y - B.y);
+}
 
-let target1 = { x: P1.x, y: P1.y };
-let target2 = { x: P2.x, y: P2.y };
-
-let dragging = null;
+function springPhysics(P, V, target, k = 0.08, damping = 0.12, maxV = 15) {
+  const ax = -k*(P.x - target.x) - damping*V.x;
+  const ay = -k*(P.y - target.y) - damping*V.y;
+  V.x += ax;
+  V.y += ay;
+  V.x = Math.max(-maxV, Math.min(V.x, maxV));
+  V.y = Math.max(-maxV, Math.min(V.y, maxV));
+  P.x += V.x;
+  P.y += V.y;
+}
 
 canvas.addEventListener("mousedown", e => {
   const r = 20;
   const m = { x: e.clientX, y: e.clientY };
-  if (dist(m, P1) < r) dragging = "P1";
-  else if (dist(m, P2) < r) dragging = "P2";
+  if (distance(m, P1) < r) dragging = "P1";
+  else if (distance(m, P2) < r) dragging = "P2";
 });
-canvas.addEventListener("mousemove", e => {
-  if (dragging === "P1") target1 = { x: e.clientX, y: e.clientY };
-  else if (dragging === "P2") target2 = { x: e.clientX, y: e.clientY };
-});
-canvas.addEventListener("mouseup", () => dragging = null);
 
 canvas.addEventListener("mousemove", e => {
-  if (!dragging) {
-    target1 = { x: e.clientX, y: e.clientY };
-    target2 = { x: canvas.width - e.clientX, y: canvas.height - e.clientY };
+  const pos = { x: e.clientX, y: e.clientY };
+  if (dragging === "P1") target1 = { ...pos };
+  else if (dragging === "P2") target2 = { ...pos };
+  else {
+    target1 = { x: pos.x, y: pos.y };
+    target2 = { x: canvas.width - pos.x, y: canvas.height - pos.y };
   }
 });
 
-function dist(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
+canvas.addEventListener("mouseup", () => dragging = null);
+
+function drawPoint(P, color="#f5c400") {
+  ctx.beginPath();
+  ctx.arc(P.x, P.y, 8, 0, Math.PI*2);
+  ctx.fillStyle = color;
+  ctx.fill();
 }
 
-function physics() {
-  const k = 0.08;
-  const d = 0.12;
-
-  let ax1 = -k * (P1.x - target1.x) - d * v1.x;
-  let ay1 = -k * (P1.y - target1.y) - d * v1.y;
-  v1.x += ax1;
-  v1.y += ay1;
-  P1.x += v1.x;
-  P1.y += v1.y;
-
-  let ax2 = -k * (P2.x - target2.x) - d * v2.x;
-  let ay2 = -k * (P2.y - target2.y) - d * v2.y;
-  v2.x += ax2;
-  v2.y += ay2;
-  P2.x += v2.x;
-  P2.y += v2.y;
-}
-
-function bezier(t, A, B, C, D) {
-  const mt = 1 - t;
-  return {
-    x: mt*mt*mt*A.x + 3*mt*mt*t*B.x + 3*mt*t*t*C.x + t*t*t*D.x,
-    y: mt*mt*mt*A.y + 3*mt*mt*t*B.y + 3*mt*t*t*C.y + t*t*t*D.y
-  };
-}
-
-function bezierDeriv(t, A, B, C, D) {
-  const mt = 1 - t;
-  return {
-    x: 3*mt*mt*(B.x - A.x) + 6*mt*t*(C.x - B.x) + 3*t*t*(D.x - C.x),
-    y: 3*mt*mt*(B.y - A.y) + 6*mt*t*(C.y - B.y) + 3*t*t*(D.y - C.y)
-  };
-}
-
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+function drawCurve() {
   ctx.lineWidth = 3;
   ctx.strokeStyle = "#0ff";
   ctx.beginPath();
-
-  let p = bezier(0, P0, P1, P2, P3);
+  let p = cubicBezier(0, P0, P1, P2, P3);
   ctx.moveTo(p.x, p.y);
-
   for (let t = 0; t <= 1; t += 0.01) {
-    p = bezier(t, P0, P1, P2, P3);
+    p = cubicBezier(t, P0, P1, P2, P3);
     ctx.lineTo(p.x, p.y);
   }
   ctx.stroke();
+}
 
-  ctx.fillStyle = "#f5c400";
-  drawPoint(P0);
-  drawPoint(P1);
-  drawPoint(P2);
-  drawPoint(P3);
-
+function drawTangents() {
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#fff";
   for (let t = 0; t <= 1; t += 0.1) {
-    const p = bezier(t, P0, P1, P2, P3);
-    const d = bezierDeriv(t, P0, P1, P2, P3);
-    const m = Math.hypot(d.x, d.y);
-    const nx = d.x / m;
-    const ny = d.y / m;
-
+    const p = cubicBezier(t, P0, P1, P2, P3);
+    const d = cubicBezierDerivative(t, P0, P1, P2, P3);
+    const mag = Math.hypot(d.x, d.y);
+    const nx = d.x / mag;
+    const ny = d.y / mag;
+    const speed = (Math.hypot(V1.x,V1.y) + Math.hypot(V2.x,V2.y)) / 2;
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
-    ctx.lineTo(p.x + nx * 25, p.y + ny * 25);
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 2;
+    ctx.lineTo(p.x + nx*(25 + speed*2), p.y + ny*(25 + speed*2));
     ctx.stroke();
   }
 }
 
-function drawPoint(p) {
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-  ctx.fill();
+function drawAll() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawCurve();
+  drawTangents();
+  drawPoint(P0,"#ff0000");
+  drawPoint(P3,"#ff0000");
+  drawPoint(P1);
+  drawPoint(P2);
 }
 
 function loop() {
-  physics();
-  draw();
+  springPhysics(P1, V1, target1);
+  springPhysics(P2, V2, target2);
+  drawAll();
   requestAnimationFrame(loop);
 }
+
 loop();
